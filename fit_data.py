@@ -10,11 +10,6 @@ from pytorch3d.structures import Meshes
 import dataset_location
 import torch
 
-
-
-
-
-
 def get_args_parser():
     parser = argparse.ArgumentParser('Model Fit', add_help=False)
     parser.add_argument('--lr', default=4e-4, type=float)
@@ -129,6 +124,9 @@ def train_model(args):
 
         # fitting
         fit_voxel(voxels_src, voxels_tgt, args)
+
+        from render_voxels import render_voxel_comparison
+        render_voxel_comparison(voxels_src, voxels_tgt)
 
 
     elif args.type == "point":
