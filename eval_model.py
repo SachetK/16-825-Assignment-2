@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 import time
 import torch
 from model import SingleViewto3D
@@ -8,17 +9,13 @@ import dataset_location
 import pytorch3d
 from pytorch3d.ops import sample_points_from_meshes
 from pytorch3d.ops import knn_points
-import mcubes
-import utils_vox
 import matplotlib.pyplot as plt 
-from pytorch3d.transforms import Rotate, axis_angle_to_matrix
-import math
-import numpy as np
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Singleto3D', add_help=False)
     parser.add_argument('--arch', default='resnet18', type=str)
     parser.add_argument('--vis_freq', default=1000, type=int)
+    parser.add_argument('--vis_dir', default='vis', type=str)
     parser.add_argument('--batch_size', default=1, type=int)
     parser.add_argument('--num_workers', default=0, type=int)
     parser.add_argument('--type', default='vox', choices=['vox', 'point', 'mesh'], type=str)
@@ -87,36 +84,37 @@ def compute_sampling_metrics(pred_points, gt_points, thresholds, eps=1e-8):
 
 def evaluate(predictions, mesh_gt, thresholds, args):
     if args.type == "vox":
-        voxels_src = predictions
-        H,W,D = voxels_src.shape[2:]
-        vertices_src, faces_src = mcubes.marching_cubes(voxels_src.detach().cpu().squeeze().numpy(), isovalue=0.5)
-        vertices_src = torch.tensor(vertices_src).float()
-        faces_src = torch.tensor(faces_src.astype(int))
-        mesh_src = pytorch3d.structures.Meshes([vertices_src], [faces_src])
-        pred_points = sample_points_from_meshes(mesh_src, args.n_points)
-        pred_points = utils_vox.Mem2Ref(pred_points, H, W, D)
-        # Apply a rotation transform to align predicted voxels to gt mesh
-        angle = -math.pi
-        axis_angle = torch.as_tensor(np.array([[0.0, angle, 0.0]]))
-        Rot = axis_angle_to_matrix(axis_angle)
-        T_transform = Rotate(Rot)
-        pred_points = T_transform.transform_points(pred_points)
-        # re-center the predicted points
-        pred_points = pred_points - pred_points.mean(1, keepdim=True)
+        from render_eval import voxel_prediction_mesh
+        batch_metrics = []
+        for index, logits in enumerate(predictions):
+            mesh_src = voxel_prediction_mesh(logits.cpu())
+            if mesh_src is None:
+                # An empty prediction has zero precision, recall, and F1.
+                batch_metrics.append({
+                    f"{name}@{t:f}": torch.zeros(1)
+                    for name in ('Precision', 'Recall', 'F1') for t in thresholds
+                })
+                continue
+            pred_points = sample_points_from_meshes(mesh_src, args.n_points)
+            gt_points = sample_points_from_meshes(mesh_gt[index], args.n_points)
+            batch_metrics.append(compute_sampling_metrics(pred_points, gt_points, thresholds))
+        return {key: torch.cat([m[key] for m in batch_metrics]) for key in batch_metrics[0]}
     elif args.type == "point":
         pred_points = predictions.cpu()
     elif args.type == "mesh":
         pred_points = sample_points_from_meshes(predictions, args.n_points).cpu()
 
     gt_points = sample_points_from_meshes(mesh_gt, args.n_points)
-    if args.type == "vox":
-        gt_points = gt_points - gt_points.mean(1, keepdim=True)
     metrics = compute_sampling_metrics(pred_points, gt_points, thresholds)
     return metrics
 
 
 
+@torch.no_grad()
 def evaluate_model(args):
+    checkpoint_path = Path(f'checkpoint_{args.type}.pth')
+    if args.load_checkpoint and not checkpoint_path.is_file():
+        raise FileNotFoundError(f'No trained checkpoint found at {checkpoint_path}. Train the model first.')
     r2n2_dataset = R2N2("test", dataset_location.SHAPENET_PATH, dataset_location.R2N2_PATH, dataset_location.SPLITS_PATH, return_voxels=True, return_feats=args.load_feat)
 
     loader = torch.utils.data.DataLoader(
@@ -143,9 +141,9 @@ def evaluate_model(args):
     avg_r_score = []
 
     if args.load_checkpoint:
-        checkpoint = torch.load(f'checkpoint_{args.type}.pth')
+        checkpoint = torch.load(checkpoint_path, map_location=args.device)
         model.load_state_dict(checkpoint['model_state_dict'])
-        print(f"Succesfully loaded iter {start_iter}")
+        print(f"Loaded {checkpoint_path} from training step {checkpoint.get('step', 'unknown')}")
     
     print("Starting evaluating !")
     max_iter = len(eval_loader)
@@ -164,21 +162,22 @@ def evaluate_model(args):
 
         metrics = evaluate(predictions, mesh_gt, thresholds, args)
 
-        # TODO:
-        # if (step % args.vis_freq) == 0:
-        #     # visualization block
-        #     #  rend = 
-        #     plt.imsave(f'vis/{step}_{args.type}.png', rend)
+        if args.vis_freq > 0 and step % args.vis_freq == 0 and args.type in ('vox', 'point'):
+            from render_eval import render_prediction_comparison
+            render_prediction_comparison(
+                feed_dict['images'], predictions, mesh_gt, args.type,
+                args.vis_dir, step,
+            )
       
 
         total_time = time.time() - start_time
         iter_time = time.time() - iter_start_time
 
-        f1_05 = metrics['F1@0.050000']
+        f1_05 = metrics['F1@0.050000'].mean()
         avg_f1_score_05.append(f1_05)
-        avg_p_score.append(torch.tensor([metrics["Precision@%f" % t] for t in thresholds]))
-        avg_r_score.append(torch.tensor([metrics["Recall@%f" % t] for t in thresholds]))
-        avg_f1_score.append(torch.tensor([metrics["F1@%f" % t] for t in thresholds]))
+        avg_p_score.append(torch.stack([metrics["Precision@%f" % t].mean() for t in thresholds]))
+        avg_r_score.append(torch.stack([metrics["Recall@%f" % t].mean() for t in thresholds]))
+        avg_f1_score.append(torch.stack([metrics["F1@%f" % t].mean() for t in thresholds]))
 
         print("[%4d/%4d]; ttime: %.0f (%.2f, %.2f); F1@0.05: %.3f; Avg F1@0.05: %.3f" % (step, max_iter, total_time, read_time, iter_time, f1_05, torch.tensor(avg_f1_score_05).mean()))
     

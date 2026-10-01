@@ -67,6 +67,8 @@ Define the loss functions `chamfer_loss` in [`losses.py`](losses.py) file.
 
 Run the file `python fit_data.py --type 'point'`, to fit the source point cloud to the target point cloud. 
 
+After training, this saves `pointcloud_comparison.png` in the current directory with the optimized and ground-truth point clouds side by side.
+
 Visualize the optimized point cloud along-side the ground truth point cloud using the tools learnt in previous section.
 
 ### 1.3. Fitting a mesh (3 points)
@@ -76,6 +78,8 @@ Define the loss functions `smoothness_loss` in [`losses.py`](losses.py) file.
 For this you can use the pre-defined losses in pytorch library.
 
 Run the file `python fit_data.py --type 'mesh'`, to fit the source mesh to the target mesh. 
+
+After training, this saves `mesh_comparison.png` in the current directory with the optimized and ground-truth meshes side by side.
 
 Visualize the optimized mesh along-side the ground truth mesh using the tools learnt in previous section.
 
@@ -95,6 +99,15 @@ After trained, visualize the input RGB, ground truth voxel grid and predicted vo
 `python eval_model.py --type 'vox' --load_checkpoint`
 
 You need to add the respective visualization code in `eval_model.py`
+
+Voxel and point evaluation now save input RGB, the PyTorch3D-rendered prediction, and the ground-truth mesh side by side. Use `--vis_freq 1` to save every batch, `--vis_dir vis` to choose the output directory, or `--vis_freq 0` to disable rendering. Files are named `<step>_<batch-index>_<type>.png`. For example:
+
+```bash
+python eval_model.py --type vox --load_checkpoint --vis_freq 100 --vis_dir vis/vox
+python eval_model.py --type point --load_checkpoint --vis_freq 100 --vis_dir vis/point
+```
+
+Use `--load_checkpoint` to evaluate a trained `checkpoint_<type>.pth`; without it, evaluation uses randomly initialized decoder weights. Empty voxel predictions are labeled with their maximum occupancy probability; the occupancy threshold remains 0.5.
 
 On your webpage, you should include visuals of any three examples in the test set. For each example show the input RGB, render of the predicted 3D voxel grid and a render of the ground truth mesh.
 

@@ -1,6 +1,6 @@
 # specify the root location where u downloaded the dataset
-root_location = "/Users/sache/Documents/16825/assignment2"
-use_full_dataset = True
+root_location = "."
+use_full_dataset = False
 dataset_name = (
     "r2n2_shapenet_dataset_full" if use_full_dataset else "r2n2_shapenet_dataset"
 )

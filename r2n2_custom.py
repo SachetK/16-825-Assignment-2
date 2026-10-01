@@ -68,6 +68,7 @@ class R2N2(ShapeNetBase):  # pragma: no cover
         voxels_rel_path: str = "ShapeNetVoxels",
         load_textures: bool = False,
         texture_resolution: int = 4,
+        return_mesh: bool = True,
     ) -> None:
         """
         Store each object's synset id and models id the given directories.
@@ -93,6 +94,8 @@ class R2N2(ShapeNetBase):  # pragma: no cover
             texture_resolution: Int specifying the resolution of the texture map per face
                 created using the textures in the obj file. A
                 (texture_resolution, texture_resolution, 3) map is created per face.
+            return_mesh: If False, read only OBJ vertices for voxel alignment and
+                omit verts/faces from the returned sample. Used for voxel training.
 
         """
         super().__init__()
@@ -103,6 +106,7 @@ class R2N2(ShapeNetBase):  # pragma: no cover
         self.load_textures = load_textures
         self.texture_resolution = texture_resolution
         self.return_feats = return_feats
+        self.return_mesh = return_mesh
         # Examine if split is valid.
         if split not in ["train", "val", "test"]:
             raise ValueError("split has to be one of (train, val, test).")
@@ -257,18 +261,32 @@ class R2N2(ShapeNetBase):  # pragma: no cover
         elif view_idxs is not None:
             model_views = view_idxs
 
+        # This dataset returns one random view. Select it before decoding images
+        # and computing cameras, rather than loading all views and discarding them.
+        model_views = [model_views[random.randint(0, len(model_views) - 1)]]
+
         model = self._get_item_ids(model_idx)
         model_path = path.join(
             self.shapenet_dir, model["synset_id"], model["model_id"], "model.obj"
         )
         try:
-            verts, faces, textures = self._load_mesh(model_path)
+            if self.return_mesh:
+                verts, faces, textures = self._load_mesh(model_path)
+            else:
+                # Voxel targets need vertex bounds, not face/UV/material parsing.
+                with open(model_path) as obj:
+                    vertex_rows = (
+                        line.split()[1:4] for line in obj
+                        if line.lstrip().startswith(('v ', 'v\t'))
+                    )
+                    verts = torch.from_numpy(np.asarray(list(vertex_rows), dtype=np.float32))
         except Exception:
             raise FileNotFoundError(
                 f"model_path {model_path} not found in {self.shapenet_dir}"
             )
-        model["verts"] = verts
-        model["faces"] = faces
+        if self.return_mesh:
+            model["verts"] = verts
+            model["faces"] = faces
         # model["textures"] = textures
         model["label"] = self.synset_dict[model["synset_id"]]
 
@@ -283,7 +301,8 @@ class R2N2(ShapeNetBase):  # pragma: no cover
                 model["model_id"],
                 "rendering",
             )
-            all_feats = torch.from_numpy(np.load(path.join(rendering_path, "feats.npy")))
+            if self.return_feats:
+                all_feats = torch.from_numpy(np.load(path.join(rendering_path, "feats.npy")))
             # Read metadata file to obtain params for calibration matrices.
             with open(path.join(rendering_path, "rendering_metadata.txt"), "r") as f:
                 metadata_lines = f.readlines()
@@ -293,7 +312,8 @@ class R2N2(ShapeNetBase):  # pragma: no cover
                 raw_img = Image.open(image_path)
                 image = torch.from_numpy(np.array(raw_img) / 255.0)[..., :3]
                 images.append(image.to(dtype=torch.float32))
-                feats.append(all_feats[i].to(dtype=torch.float32))
+                if self.return_feats:
+                    feats.append(all_feats[i].to(dtype=torch.float32))
 
                 # Get camera calibration.
                 azim, elev, yaw, dist_ratio, fov = [
@@ -344,7 +364,7 @@ class R2N2(ShapeNetBase):  # pragma: no cover
                 # Read voxel coordinates as a tensor of shape (N, 3).
                 voxel_coords = read_binvox_coords(f)
             # Align voxels to the same coordinate system as mesh verts.
-            voxel_coords = align_bbox(voxel_coords, model["verts"])
+            voxel_coords = align_bbox(voxel_coords, verts)
             model["voxel_coords"] = voxel_coords
             voxels = utils_vox.voxelize_xyz(voxel_coords.unsqueeze(0),32,32,32).squeeze(0)
             # for RT in voxel_RTs:
@@ -354,8 +374,7 @@ class R2N2(ShapeNetBase):  # pragma: no cover
             #     voxels = voxelize(voxel_coords, P, VOXEL_SIZE)
             #     voxels_list.append(voxels)
             model["voxels"] = voxels
-        num_views = model['images'].shape[0]
-        rand_view = random.randint(0,num_views-1)
+        rand_view = 0
 
         model['images'] = model['images'][rand_view]
         model['R'] = model['R'][rand_view]

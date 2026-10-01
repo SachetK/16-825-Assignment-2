@@ -91,15 +91,14 @@ class SingleViewto3D(nn.Module):
 
         # call decoder
         if args.type == "vox":
-            voxels_pred = self.decoder(encoded_feat)
+            voxels_pred = self.decoder(encoded_feat.reshape(B, 512, 1, 1, 1))
             return voxels_pred
 
         elif args.type == "point":
-            pointclouds_pred = self.decoder(encoded_feat)
+            pointclouds_pred = self.decoder(encoded_feat).reshape(B, self.n_point, 3)
             return pointclouds_pred
 
         elif args.type == "mesh":
             deform_vertices_pred = self.decoder(encoded_feat)
             mesh_pred = self.mesh_pred.offset_verts(deform_vertices_pred.reshape([-1,3]))
             return mesh_pred
-

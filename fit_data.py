@@ -25,7 +25,7 @@ def fit_mesh(mesh_src, mesh_tgt, args):
     start_iter = 0
     start_time = time.time()
 
-    deform_vertices_src = torch.zeros(mesh_src.verts_packed().shape, requires_grad=True, device='cuda')
+    deform_vertices_src = torch.zeros_like(mesh_src.verts_packed(), requires_grad=True)
     optimizer = torch.optim.Adam([deform_vertices_src], lr = args.lr)
     print("Starting training !")
     for step in range(start_iter, args.max_iter):
@@ -136,7 +136,10 @@ def train_model(args):
         pointclouds_tgt = sample_points_from_meshes(mesh_tgt, args.n_points)
 
         # fitting
-        fit_pointcloud(pointclouds_src, pointclouds_tgt, args)        
+        fit_pointcloud(pointclouds_src, pointclouds_tgt, args)
+
+        from render_fit import render_pointcloud_comparison
+        render_pointcloud_comparison(pointclouds_src, pointclouds_tgt)
     
     elif args.type == "mesh":
         # initialization
@@ -145,7 +148,10 @@ def train_model(args):
         mesh_tgt = Meshes(verts=[feed_cuda['verts']], faces=[feed_cuda['faces']])
 
         # fitting
-        fit_mesh(mesh_src, mesh_tgt, args)        
+        fit_mesh(mesh_src, mesh_tgt, args)
+
+        from render_fit import render_mesh_comparison
+        render_mesh_comparison(mesh_src, mesh_tgt)
 
 
     

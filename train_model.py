@@ -73,6 +73,7 @@ def train_model(args):
         dataset_location.SPLITS_PATH,
         return_voxels=True,
         return_feats=args.load_feat,
+        return_mesh=args.type != "vox",
     )
 
     loader = torch.utils.data.DataLoader(
@@ -83,8 +84,8 @@ def train_model(args):
         pin_memory=True,
         drop_last=True,
         shuffle=True,
+        persistent_workers=args.num_workers > 0,
     )
-    train_loader = iter(loader)
 
     model = SingleViewto3D(args)
     model.to(args.device)
@@ -106,7 +107,7 @@ def train_model(args):
     for step in range(start_iter, args.max_iter):
         iter_start_time = time.time()
 
-        if step % len(train_loader) == 0:  # restart after one epoch
+        if step == start_iter or step % len(loader) == 0:  # restart after one epoch
             train_loader = iter(loader)
 
         read_start_time = time.time()
