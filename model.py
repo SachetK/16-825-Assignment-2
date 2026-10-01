@@ -1,11 +1,11 @@
+import time
+
+import pytorch3d
+import torch
+import torch.nn as nn
+from pytorch3d.utils import ico_sphere
 from torchvision import models as torchvision_models
 from torchvision import transforms
-import time
-import torch.nn as nn
-import torch
-import pytorch3d
-from pytorch3d.utils import ico_sphere
-from pytorch3d.ops import vert_align, GraphConv
 
 
 class SingleViewto3D(nn.Module):
@@ -54,10 +54,26 @@ class SingleViewto3D(nn.Module):
             # Output: b x mesh_pred.verts_packed().shape[0] x 3  
             # try different mesh initializations
             mesh_pred = ico_sphere(4, self.device)
-            self.mesh_pred = pytorch3d.structures.Meshes(mesh_pred.verts_list()*args.batch_size, mesh_pred.faces_list()*args.batch_size)
-            pass
+            self.mesh_pred = pytorch3d.structures.Meshes(
+                mesh_pred.verts_list() * args.batch_size,
+                mesh_pred.faces_list() * args.batch_size
+            )
 
-            # self.decoder =
+            self.n_verts = mesh_pred.verts_packed().shape[0]
+
+            self.decoder = nn.Sequential(
+                nn.Linear(512, 1024),
+                nn.ReLU(),
+
+                nn.Linear(1024, 1024),
+                nn.ReLU(),
+
+                nn.Linear(1024, 1024),
+                nn.ReLU(),
+
+                nn.Linear(1024, self.n_verts * 3),
+                nn.Tanh()
+            )
 
     def forward(self, images, args):
         results = dict()
