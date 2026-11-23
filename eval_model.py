@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 import time
 import torch
@@ -23,8 +24,12 @@ def get_args_parser():
     parser.add_argument('--w_chamfer', default=1.0, type=float)
     parser.add_argument('--w_smooth', default=0.1, type=float)  
     parser.add_argument('--load_checkpoint', action='store_true')  
+    parser.add_argument('--checkpoint_path', default=None, type=str)
     parser.add_argument('--device', default='cuda', type=str) 
     parser.add_argument('--load_feat', action='store_true') 
+    parser.add_argument('--metrics_path', default=None, type=str,
+                        help='Optional JSON file for aggregate precision, recall, and F1.')
+    parser.add_argument('--seed', default=0, type=int)
     return parser
 
 def preprocess(feed_dict, args):
@@ -112,7 +117,8 @@ def evaluate(predictions, mesh_gt, thresholds, args):
 
 @torch.no_grad()
 def evaluate_model(args):
-    checkpoint_path = Path(f'checkpoint_{args.type}.pth')
+    torch.manual_seed(args.seed)
+    checkpoint_path = Path(args.checkpoint_path or f'checkpoint_{args.type}.pth')
     if args.load_checkpoint and not checkpoint_path.is_file():
         raise FileNotFoundError(f'No trained checkpoint found at {checkpoint_path}. Train the model first.')
     r2n2_dataset = R2N2("test", dataset_location.SHAPENET_PATH, dataset_location.R2N2_PATH, dataset_location.SPLITS_PATH, return_voxels=True, return_feats=args.load_feat)
@@ -162,11 +168,11 @@ def evaluate_model(args):
 
         metrics = evaluate(predictions, mesh_gt, thresholds, args)
 
-        if args.vis_freq > 0 and step % args.vis_freq == 0 and args.type in ('vox', 'point'):
+        if args.vis_freq > 0 and step % args.vis_freq == 0:
             from render_eval import render_prediction_comparison
             render_prediction_comparison(
                 feed_dict['images'], predictions, mesh_gt, args.type,
-                args.vis_dir, step,
+                args.vis_dir, step, metrics=metrics,
             )
       
 
@@ -183,8 +189,25 @@ def evaluate_model(args):
     
 
     avg_f1_score = torch.stack(avg_f1_score).mean(0)
+    avg_p_score = torch.stack(avg_p_score).mean(0)
+    avg_r_score = torch.stack(avg_r_score).mean(0)
 
     save_plot(thresholds, avg_f1_score,  args)
+    summary = {
+        'type': args.type,
+        'checkpoint_step': checkpoint.get('step') if args.load_checkpoint else None,
+        'num_examples': len(avg_f1_score_05) * args.batch_size,
+        'thresholds': thresholds,
+        'precision': avg_p_score.tolist(),
+        'recall': avg_r_score.tolist(),
+        'f1': avg_f1_score.tolist(),
+    }
+    print('Summary:', json.dumps(summary))
+    if args.metrics_path:
+        metrics_path = Path(args.metrics_path)
+        metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        metrics_path.write_text(json.dumps(summary, indent=2) + '\n')
+        print(f'Saved metrics to {metrics_path}')
     print('Done!')
 
 if __name__ == '__main__':

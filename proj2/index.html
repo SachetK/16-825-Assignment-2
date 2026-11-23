@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>16-825 Assignment 2</title>
+  <style>
+    body { max-width: 960px; margin: 40px auto; padding: 0 20px; font: 16px/1.5 Arial, sans-serif; color: #222; }
+    h1 { margin-bottom: 0; }
+    h2 { margin-top: 50px; padding-bottom: 5px; border-bottom: 1px solid #aaa; }
+    h3 { margin-top: 32px; }
+    img { max-width: 100%; height: auto; margin: 8px 0 20px; }
+    .plot { max-width: 650px; }
+    table { border-collapse: collapse; margin: 20px 0; }
+    th, td { padding: 7px 10px; border: 1px solid #999; text-align: left; }
+    th { background: #eee; }
+    .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 650px) { .comparison { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>16-825 Assignment 2: Single View to 3D</h1>
+  <p>Andrew ID: skorada</p>
+
+  <h2>1. Exploring loss functions</h2>
+
+  <h3>1.1 Fitting a voxel grid</h3>
+  <p>Binary cross-entropy loss.</p>
+  <img src="data/voxel-fit.png" alt="Fitted and target voxel grids">
+
+  <h3>1.2 Fitting a point cloud</h3>
+  <p>Bidirectional Chamfer loss.</p>
+  <img src="data/point-fit.png" alt="Fitted and target point clouds">
+
+  <h3>1.3 Fitting a mesh</h3>
+  <p>Chamfer loss with Laplacian smoothness regularization.</p>
+  <img src="data/mesh-fit.png" alt="Fitted and target meshes">
+
+  <h2>2. Reconstructing 3D from a single view</h2>
+  <p>All models use a ResNet-18 image encoder and were evaluated on 678 test chairs. Metrics use 1,000 sampled points. The voxel result uses the best loss setting from Section 2.4.</p>
+
+  <h3>2.1 Voxel model</h3>
+  <div class="examples">
+    <img src="data/vox-1.gif" alt="Rotating voxel test example 1">
+    <img src="data/vox-2.gif" alt="Rotating voxel test example 2">
+    <img src="data/vox-3.gif" alt="Rotating voxel test example 3">
+  </div>
+  <img class="plot" src="data/eval-vox.png" alt="Voxel F1 plot">
+  <p>Mean F1@0.05: <strong>56.48</strong>.</p>
+
+  <h3>2.2 Point-cloud model</h3>
+  <div class="examples">
+    <img src="data/point-1.gif" alt="Rotating point-cloud test example 1">
+    <img src="data/point-2.gif" alt="Rotating point-cloud test example 2">
+    <img src="data/point-3.gif" alt="Rotating point-cloud test example 3">
+  </div>
+  <img class="plot" src="data/eval-point.png" alt="Point-cloud F1 plot">
+  <p>Mean F1@0.05: <strong>76.62</strong>.</p>
+
+  <h3>2.3 Mesh model</h3>
+  <div class="examples">
+    <img src="data/mesh-1.gif" alt="Rotating mesh test example 1">
+    <img src="data/mesh-2.gif" alt="Rotating mesh test example 2">
+    <img src="data/mesh-3.gif" alt="Rotating mesh test example 3">
+  </div>
+  <img class="plot" src="data/eval-mesh.png" alt="Mesh F1 plot">
+  <p>Mean F1@0.05: <strong>73.23</strong>.</p>
+
+  <table>
+    <thead><tr><th>Model</th><th>Precision@0.05</th><th>Recall@0.05</th><th>F1@0.05</th><th>F1 gap from best</th></tr></thead>
+    <tbody>
+      <tr><td>Voxel</td><td>51.79</td><td>63.24</td><td>56.48</td><td>-20.14</td></tr>
+      <tr><td>Point cloud</td><td>79.51</td><td>75.15</td><td>76.62</td><td>0.00</td></tr>
+      <tr><td>Mesh</td><td>73.61</td><td>73.46</td><td>73.23</td><td>-3.39</td></tr>
+    </tbody>
+  </table>
+  <p>The point-cloud model performs best at 76.62 F1. It is 3.39 points above the mesh model and 20.14 points above the voxel model; the mesh model is 16.75 points above the voxel model. Point clouds are trained directly with Chamfer distance, so their points can move freely toward the target surface, which closely matches this point-sampled evaluation. The mesh must deform a fixed sphere while preserving connectivity and smoothness, so it cannot place vertices as freely, but its continuous surface still gives balanced precision and recall. The voxel model is limited to a 32³ grid. Quantization merges nearby surfaces and often removes thin chair legs or creates blocky boundaries, so points sampled from its extracted surface are less likely to fall within the 0.05 distance threshold.</p>
+
+  <h3>2.4 Hyperparameter variation</h3>
+  <p>I fine-tuned the voxel model for 600 steps using BCE plus a soft Dice loss. I varied the Dice weight over 0.05, 0.10, and 0.20, using the same 100 test examples and random samples for each comparison. Their F1@0.05 scores were 56.33, 55.84, and 55.80. Weight 0.05 performed best. On the full 678-object test set it scored 56.48, improving the original model's 55.61.</p>
+  <img class="plot" src="data/voxel-loss-weight.png" alt="Voxel Dice-loss weight experiment">
+
+  <h3>2.5 Model interpretation</h3>
+  <p>I extracted the 512-dimensional encoder feature for one view of every test chair and applied PCA. PC1 explains 40.3% of the feature variance and PC2 explains 5.8%. Each point below is one of the 678 test images, colored by the fraction of occupied voxels in its ground-truth shape.</p>
+  <img class="plot" src="data/latent-pca.png" alt="PCA projection of test-set latent features">
+  <p>PC1 has a -0.674 correlation with occupied volume. The real images nearest five positions on this axis progress from bulky upholstered chairs toward thinner office and slatted chairs.</p>
+  <img src="data/latent-pc1-inputs.png" alt="Real chair images along the first latent principal component">
+  <p>To isolate what the decoder reads from this direction, I held every other latent component at its dataset mean and changed only PC1. The rotating decoded shapes show the same transition: the solid armchair loses volume, the seat narrows, and distinct legs and a thin back emerge.</p>
+  <img src="data/latent-pc1-traversal.gif" alt="Controlled decoder traversal along latent PC1">
+  <p>PC2 has a weaker 0.211 occupancy correlation and captures a different factor. Its nearby inputs move from low or reclined seats to tall upright backs, while the controlled traversal changes back height and seat-back proportions. The two directions therefore separate overall chair mass from a more specific pose and proportion change.</p>
+  <img src="data/latent-pc2-inputs.png" alt="Real chair images along the second latent principal component">
+  <img src="data/latent-pc2-traversal.gif" alt="Controlled decoder traversal along latent PC2">
+
+  <h2>3.3 Extra credit: Extended dataset</h2>
+  <p>I compared the original voxel model trained only on chairs with a model trained on chairs, cars, and airplanes. Both models used the same architecture and were evaluated on the same rendered view of each of 100 held-out chairs. Surface points were sampled with matched random seeds.</p>
+  <table>
+    <thead><tr><th>Training data</th><th>Precision@0.05</th><th>Recall@0.05</th><th>F1@0.05</th></tr></thead>
+    <tbody>
+      <tr><td>Chairs only</td><td>51.48</td><td>61.65</td><td>55.67</td></tr>
+      <tr><td>Three classes</td><td>52.25</td><td>57.83</td><td>54.22</td></tr>
+      <tr><td>Difference</td><td>+0.77</td><td>-3.83</td><td>-1.44</td></tr>
+    </tbody>
+  </table>
+  <p>Adding two classes raises precision slightly but lowers recall substantially, producing a 1.44-point, or 2.6%, decrease in chair F1. This suggests that the broader model predicts more conservative surfaces: its points are slightly more likely to lie near the target, but it covers less of the complete chair.</p>
+  <img class="plot" src="data/dataset-comparison.png" alt="Single-class and three-class comparison">
+  <p>The matched examples show the same pattern. Both models recover the main mass of the upholstered chairs, although their 32³ outputs smooth the arms and legs. On the thin metal chair, the chair-only model retains a more continuous back and seat, while the three-class prediction fragments and leaves an isolated component. The multi-class training therefore does not improve chair reconstruction with this fixed-capacity decoder; sharing it across dissimilar categories appears to trade chair-specific coverage for slightly cleaner occupied regions.</p>
+  <div class="comparison">
+    <div><h3>Chair-only model</h3><img src="data/chair-only-0.gif" alt="Rotating chair-only example 1"><img src="data/chair-only-1.gif" alt="Rotating chair-only example 2"><img src="data/chair-only-2.gif" alt="Rotating chair-only example 3"></div>
+    <div><h3>Three-class model</h3><img src="data/three-class-0.gif" alt="Rotating three-class example 1"><img src="data/three-class-1.gif" alt="Rotating three-class example 2"><img src="data/three-class-2.gif" alt="Rotating three-class example 3"></div>
+  </div>
+</body>
+</html>

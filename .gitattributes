@@ -1,0 +1,6 @@
+checkpoint_mesh.pth filter=lfs diff=lfs merge=lfs -text
+checkpoint_point.pth filter=lfs diff=lfs merge=lfs -text
+checkpoint_vox_improved.pth filter=lfs diff=lfs merge=lfs -text
+checkpoint_vox_original.pth filter=lfs diff=lfs merge=lfs -text
+checkpoint_vox.pth filter=lfs diff=lfs merge=lfs -text
+full_dataset/checkpoint_vox.pth filter=lfs diff=lfs merge=lfs -text

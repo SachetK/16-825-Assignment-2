@@ -100,11 +100,12 @@ After trained, visualize the input RGB, ground truth voxel grid and predicted vo
 
 You need to add the respective visualization code in `eval_model.py`
 
-Voxel and point evaluation now save input RGB, the PyTorch3D-rendered prediction, and the ground-truth mesh side by side. Use `--vis_freq 1` to save every batch, `--vis_dir vis` to choose the output directory, or `--vis_freq 0` to disable rendering. Files are named `<step>_<batch-index>_<type>.png`. For example:
+Voxel, point-cloud, and mesh evaluation save input RGB, the PyTorch3D-rendered prediction, and the ground-truth mesh side by side. The prediction title includes F1, precision, and recall at 0.05. Use `--vis_freq 1` to save every batch, `--vis_dir vis` to choose the output directory, or `--vis_freq 0` to disable rendering. Files are named `<step>_<batch-index>_<type>.png`. For example:
 
 ```bash
 python eval_model.py --type vox --load_checkpoint --vis_freq 100 --vis_dir vis/vox
 python eval_model.py --type point --load_checkpoint --vis_freq 100 --vis_dir vis/point
+python eval_model.py --type mesh --load_checkpoint --vis_freq 100 --vis_dir vis/mesh
 ```
 
 Use `--load_checkpoint` to evaluate a trained `checkpoint_<type>.pth`; without it, evaluation uses randomly initialized decoder weights. Empty voxel predictions are labeled with their maximum occupancy probability; the occupancy threshold remains 0.5.
